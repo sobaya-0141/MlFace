@@ -1,41 +1,115 @@
 package sobaya.app.mlface
 
-import android.graphics.Bitmap
+import android.Manifest
+import android.app.Activity
+import android.content.ContentValues
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import com.google.firebase.ml.vision.FirebaseVision
 import com.google.firebase.ml.vision.common.FirebaseVisionImage
-import com.google.firebase.ml.vision.common.FirebaseVisionImageMetadata
 import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetectorOptions
 import com.google.firebase.ml.vision.face.FirebaseVisionFaceLandmark
+import permissions.dispatcher.*
+import java.io.File
+import java.io.FileInputStream
+import java.text.SimpleDateFormat
+import java.util.*
 
-
+@RuntimePermissions
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        const val CAMERA_REQUEST_CODE = 100
+    }
+
+    var path: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        face(BitmapFactory.decodeResource(resources, R.drawable.sleep))
+        callCamera()
     }
 
-    private fun face(bmp: Bitmap) {
+    @OnShowRationale(Manifest.permission_group.STORAGE)
+    fun rationale() {
+        Toast.makeText(this, "写真を保存させてくださいmm", Toast.LENGTH_SHORT).show()
+    }
 
-        val options = FirebaseVisionFaceDetectorOptions.Builder()
-            .setLandmarkMode(FirebaseVisionFaceDetectorOptions.ALL_LANDMARKS)   // 顔のパーツ位置
-            .setClassificationMode(FirebaseVisionFaceDetectorOptions.ALL_CLASSIFICATIONS)   // 目が開いてるかと笑顔判定
-            .setContourMode(FirebaseVisionFaceDetectorOptions.ALL_CONTOURS) // 輪郭
-            .setPerformanceMode(FirebaseVisionFaceDetectorOptions.ACCURATE) // パフォーマンス
+    @OnPermissionDenied(Manifest.permission_group.STORAGE)
+    fun denied() {
+        Toast.makeText(this, "権限をくださいmm", Toast.LENGTH_SHORT).show()
+    }
+
+    @OnNeverAskAgain(Manifest.permission_group.STORAGE)
+    fun neverAskAgain() {
+        Toast.makeText(this, "もうダメだぁ", Toast.LENGTH_SHORT).show()
+    }
+
+    //fixme I can not get the authority
+    @NeedsPermission(Manifest.permission_group.STORAGE)
+    fun callCamera() {
+
+        val timeStamp = SimpleDateFormat("yyyyMMddHHmmss", Locale.JAPAN).format(Date())
+        val fileName = "geed_${timeStamp}"
+        val storageDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "ULTRAMAN")
+
+        if (!storageDir.exists()) {
+            storageDir.mkdir()
+        }
+        val file = File.createTempFile(
+            fileName, /* prefix */
+            ".jpg", /* suffix */
+            storageDir      /* directory */
+        )
+
+        path = file.absolutePath
+        val uri = FileProvider.getUriForFile(this, packageName, file)
+
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            addCategory(Intent.CATEGORY_DEFAULT)
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        }
+
+        startActivityForResult(intent, CAMERA_REQUEST_CODE)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == CAMERA_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put("_data", path)
+            }
+            contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+            val inputStream = FileInputStream(File(path))
+            val bmp = BitmapFactory.decodeStream(inputStream)
+            val image = FirebaseVisionImage.fromBitmap(bmp)
+
+            face(image)
+        }
+    }
+
+    private fun face(image: FirebaseVisionImage) {
+
+        val highAccuracyOpts = FirebaseVisionFaceDetectorOptions.Builder()
+            .setPerformanceMode(FirebaseVisionFaceDetectorOptions.ACCURATE)
+            .setLandmarkMode(FirebaseVisionFaceDetectorOptions.ALL_LANDMARKS)
+            .setClassificationMode(FirebaseVisionFaceDetectorOptions.NO_CLASSIFICATIONS)
+            .setContourMode(FirebaseVisionFaceDetectorOptions.NO_CONTOURS)
             .build()
+
         val detector = FirebaseVision.getInstance()
-            .getVisionFaceDetector(options)
-        // ↓未使用になった？
-        val metadata = FirebaseVisionImageMetadata.Builder()
-            .setRotation(FirebaseVisionImageMetadata.ROTATION_0)
-            .build()
+            .getVisionFaceDetector(highAccuracyOpts)
 
-        detector.detectInImage(FirebaseVisionImage.fromBitmap(bmp))
+        detector.detectInImage(image)
             .addOnSuccessListener {
                 it.forEach { face ->
                     // 左目開いてるか
@@ -59,6 +133,8 @@ class MainActivity : AppCompatActivity() {
                     it.toString()
                 }
             }
-            .addOnFailureListener {}
+            .addOnFailureListener {
+                it.toString()
+            }
     }
 }
