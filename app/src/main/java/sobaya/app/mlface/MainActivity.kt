@@ -34,7 +34,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        callCamera()
+//        callCamera()
+        val bmp = BitmapFactory.decodeResource(resources, R.drawable.smile)
+        val firebase = FirebaseVisionImage.fromBitmap(bmp)
+        face(firebase)
     }
 
     @OnShowRationale(Manifest.permission_group.STORAGE)
@@ -111,6 +114,7 @@ class MainActivity : AppCompatActivity() {
 
         detector.detectInImage(image)
             .addOnSuccessListener {
+                Toast.makeText(this@MainActivity, "SUCCESS", Toast.LENGTH_SHORT).show()
                 it.forEach { face ->
                     // 左目開いてるか
                     val leftEyeOpen = face.leftEyeOpenProbability
@@ -135,6 +139,12 @@ class MainActivity : AppCompatActivity() {
             }
             .addOnFailureListener {
                 it.toString()
+            }
+            .addOnCompleteListener {
+                it.toString()
+            }
+            .addOnCanceledListener {
+                1.toString()
             }
     }
 }
